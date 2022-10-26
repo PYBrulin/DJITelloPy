@@ -47,6 +47,7 @@ class Tello:
 
     CONTROL_UDP_PORT = 8889
     STATE_UDP_PORT = 8890
+    DEBUG_UDP_PORT = 8891 # Used in simulated environment only
 
     # Constants for video settings
     BITRATE_AUTO = 0
@@ -91,6 +92,10 @@ class Tello:
     state_field_converters = {key : int for key in INT_STATE_FIELDS}
     state_field_converters.update({key : float for key in FLOAT_STATE_FIELDS})
 
+    debug_field_converters: Dict[str, Union[Type[int], Type[float]]]
+    debug_field_converters = {key : int for key in INT_STATE_FIELDS}
+    debug_field_converters.update({key : float for key in FLOAT_STATE_FIELDS})
+
     # VideoCapture object
     background_frame_read: Optional['BackgroundFrameRead'] = None
 
@@ -123,9 +128,14 @@ class Tello:
             state_receiver_thread.daemon = True
             state_receiver_thread.start()
 
+            # Run debug UDP receiver on background
+            debug_receiver_thread = Thread(target=Tello.udp_debug_receiver)
+            debug_receiver_thread.daemon = True
+            debug_receiver_thread.start()
+
             threads_initialized = True
 
-        drones[host] = {'responses': [], 'state': {}}
+        drones[host] = {'responses': [], 'state': {}, 'debug': {}}
 
         self.LOGGER.info("Tello instance was initialized. Host: '{}'. Port: '{}'.".format(host, Tello.CONTROL_UDP_PORT))
 
@@ -403,6 +413,106 @@ class Tello:
             int: 0-100
         """
         return self.get_state_field('bat')
+
+    @staticmethod
+    def udp_debug_receiver():
+        """Setup debug UDP receiver. This method listens for state information from
+        Tello. Must be run from a background thread in order to not block
+        the main thread.
+        Internal method, you normally wouldn't call this yourself.
+        """
+        debug_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        debug_socket.bind(("", Tello.DEBUG_UDP_PORT))
+
+        while True:
+            try:
+                data, address = debug_socket.recvfrom(1024)
+
+                address = address[0]
+                Tello.LOGGER.debug('Data received from {} at debug_socket'.format(address))
+
+                if address not in drones:
+                    continue
+
+                data = data.decode('ASCII')
+                drones[address]['debug'] = Tello.parse_debug(data)
+
+            except Exception as e:
+                Tello.LOGGER.error(e)
+                break
+
+    @staticmethod
+    def parse_debug(debug: str) -> Dict[str, Union[int, float, str]]:
+        """Parse a debug line to a dictionary
+        Internal method, you normally wouldn't call this yourself.
+        """
+        debug = debug.strip()
+        Tello.LOGGER.debug('Raw debug data: {}'.format(debug))
+
+        if debug == 'ok':
+            return {}
+
+        debug_dict = {}
+        for field in debug.split(';'):
+            split = field.split(':')
+            if len(split) < 2:
+                continue
+
+            key = split[0]
+            value: Union[int, float, str] = split[1]
+
+            if key in Tello.debug_field_converters:
+                num_type = Tello.debug_field_converters[key]
+                try:
+                    value = num_type(value)
+                except ValueError as e:
+                    Tello.LOGGER.debug('Error parsing debug value for {}: {} to {}'
+                                       .format(key, value, num_type))
+                    Tello.LOGGER.error(e)
+                    continue
+
+            debug_dict[key] = value
+
+        return debug_dict
+
+    def get_current_debug(self) -> dict:
+        """Call this function to attain the debug of the Tello. Returns a dict
+        with all fields.
+        Internal method, you normally wouldn't call this yourself.
+        """
+        return self.get_own_udp_object()['debug']
+
+    def get_debug_field(self, key: str):
+        """Get a specific sate field by name.
+        Internal method, you normally wouldn't call this yourself.
+        """
+        debug = self.get_current_debug()
+
+        if key in debug:
+            return debug[key]
+        else:
+            raise TelloException('Could not get debug property: {}'.format(key))
+
+    def get_debug_world_x(self) -> int:
+        """Tello world position along x-axis 
+        Returns:
+            float: position in meters
+        """
+        return self.get_debug_field('world_x')
+
+    def get_debug_world_y(self) -> int:
+        """Tello world position along y-axis 
+        Returns:
+            float: position in meters
+        """
+        return self.get_debug_field('world_y')
+
+    def get_debug_world_z(self) -> int:
+        """Tello world position along z-axis 
+        Returns:
+            float: position in meters
+        """
+        return self.get_debug_field('world_z')
 
     def get_udp_video_address(self) -> str:
         """Internal method, you normally wouldn't call this youself.
