@@ -493,6 +493,22 @@ class Tello:
         else:
             raise TelloException('Could not get debug property: {}'.format(key))
 
+    def get_debug_field_startswith(self, sw: str):
+        """Get a specific sate field by name.
+        Internal method, you normally wouldn't call this yourself.
+        """
+        debug = self.get_current_debug()
+        
+        ret = {}
+        for key in debug.keys():
+            if key.startswith(sw):
+                ret[key] = debug[key]
+        
+        if ret:
+            return ret
+        else:
+            raise TelloException('Could not get debug property starting with: {}'.format(key))
+
     def get_debug_world_x(self) -> int:
         """Tello world position along x-axis 
         Returns:
@@ -513,6 +529,13 @@ class Tello:
             float: position in meters
         """
         return self.get_debug_field('world_z')
+
+    def get_debug_proximity_distances(self) -> int:
+        """Tello proxmiy distances dictionnary 
+        Returns:
+            Dict[string, float]: position measured by proximity sensors in meters
+        """
+        return self.get_debug_field_startswith('distance_')
 
     def get_udp_video_address(self) -> str:
         """Internal method, you normally wouldn't call this youself.
