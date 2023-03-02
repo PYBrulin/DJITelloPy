@@ -46,8 +46,9 @@ class Tello:
     VS_UDP_PORT = DEFAULT_VS_UDP_PORT
 
     CONTROL_UDP_PORT = 8889
+    CONTROL_UDP_PORT_CLIENT = CONTROL_UDP_PORT
     STATE_UDP_PORT = 8890
-    DEBUG_UDP_PORT = 8891 # Used in simulated environment only
+    DEBUG_UDP_PORT = 8891  # Used in simulated environment only
 
     # Constants for video settings
     BITRATE_AUTO = 0
@@ -118,7 +119,7 @@ class Tello:
         if not threads_initialized:
             # Run Tello command responses UDP receiver on background
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            client_socket.bind(("", Tello.CONTROL_UDP_PORT))
+            client_socket.bind(('', Tello.CONTROL_UDP_PORT_CLIENT)) # SIMULATOR RESPONSE
             response_receiver_thread = Thread(target=Tello.udp_response_receiver)
             response_receiver_thread.daemon = True
             response_receiver_thread.start()
